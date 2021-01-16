@@ -1,11 +1,13 @@
 #pragma once
 
-enum lengths{
+enum lengths {
     message_max_length = 1024,
     user_max_length = 255,
     uuid_length = 16,
     request_header_length = uuid_length + 1 + 1 + 4,
-    response_header_length = 1 + 2 + 4
+    response_header_length = 1 + 2 + 4,
+    max_clients = 100,
+    client_list_max_bytes = (uuid_length + user_max_length) * max_clients
 };
 
 

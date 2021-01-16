@@ -78,9 +78,8 @@ int main(int argc, char* argv[])
 		boost::filesystem::path user_file(USER_PATH);
 
 		// get clients
-		//clients_response clients_res[100];
+		clients_response clients[max_clients];
 		size_t num_of_clients;
-		clients_response* clients;
 
 		// user file
 		ifstream user_input_stream;
@@ -129,9 +128,7 @@ int main(int argc, char* argv[])
 						std::getline(user_input_stream, strUsername);
 						std::getline(user_input_stream, strUuid);
 						uuid = boost::lexical_cast<boost::uuids::uuid>(strUuid);
-
 						user_input_stream.close();
-						memcpy_s(&uuid, 16, strUuid.c_str(), 16);
 						break;
 					}
 
@@ -174,35 +171,36 @@ int main(int argc, char* argv[])
 						break;
 					}
 
+					
 					std::copy(uuid.begin(), uuid.end(), request.clientId);
 					request.code = client_list_code;
 					request.size = 0;
 
-					buffers.push_back(boost::asio::buffer(&uuid, uuid_length));
+					buffers.push_back(boost::asio::buffer(&request.clientId, uuid_length));
 					buffers.push_back(boost::asio::buffer(&request.version_, 1));
 					buffers.push_back(boost::asio::buffer(&request.code, 1));
 					buffers.push_back(boost::asio::buffer(&request.size, 4));
 					boost::asio::write(s, buffers);
 
-
-					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
-					//s.read_some(boost::asio::buffer(&response, response_header_length));
-					num_of_clients = response.size / (uuid_length + user_max_length);
-					clients = new clients_response[num_of_clients];
-
-					boost::asio::read(s, boost::asio::buffer(&response.payload, response.size));
-					//s.read_some(boost::asio::buffer(&clients, response.size));
-					//boost::asio::read(s, boost::asio::buffer(&response, 1 + 2 + 4 + (uuid_length + 255) * 2));
+					s.read_some(boost::asio::buffer(&response, response_header_length + client_list_max_bytes));
 
 					if (response.code == 1001 && response.size > 0) {
-						memcpy_s(&clients, response.size, &response.payload, response.size);
+						num_of_clients = response.size / (uuid_length + user_max_length);
+
+						if (num_of_clients > max_clients) {
+							std::cout << "Displaying only first " << max_clients << "users" << std::endl;
+							memcpy_s(&clients, client_list_max_bytes, &response.payload, client_list_max_bytes);
+						}
+						else {
+							memcpy_s(&clients, response.size, &response.payload, response.size);
+						}
 
 						for (size_t i = 0; i < response.size / (uuid_length + user_max_length); i++)
 						{
 							clients_response user = clients[i];
 							std::string currUid = boost::uuids::to_string(user.client_id);
-							
-							std::cout << user.client_name  << " - " << currUid << std::endl;
+
+							std::cout << user.client_name << " - " << currUid << std::endl;
 						}
 					}
 

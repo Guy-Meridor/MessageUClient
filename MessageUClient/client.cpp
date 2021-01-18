@@ -78,8 +78,14 @@ int main(int argc, char* argv[])
 		boost::filesystem::path user_file(USER_PATH);
 
 		// get clients
-		clients_response clients[max_clients];
+		//clients_response clients[max_clients];
+		clients_response client;
 		size_t num_of_clients;
+
+		//get messages
+		message_meta msg_meta;
+		char* msg_content;
+
 
 		// user file
 		ifstream user_input_stream;
@@ -140,7 +146,6 @@ int main(int argc, char* argv[])
 					request.code = registration_code;
 					request.size = strlen(username);
 					std::copy(uuid.begin(), uuid.end(), request.clientId);
-
 					buffers.push_back(boost::asio::buffer(&request.clientId, uuid_length));
 					buffers.push_back(boost::asio::buffer(&request.version_, 1));
 					buffers.push_back(boost::asio::buffer(&request.code, 1));
@@ -150,11 +155,11 @@ int main(int argc, char* argv[])
 
 
 					// TODO: check why extra byte
-					boost::asio::read(s, boost::asio::buffer(&response, 1 + 2 + 4 + uuid_length + 1));
-					memcpy_s(&reg_res, uuid_length, &response.payload, uuid_length);
+					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
 
 					if (response.code == registration_success) {
 
+						boost::asio::read(s, boost::asio::buffer(&reg_res, uuid_length));
 						uuid = reg_res.client_id;
 
 						strUuid = boost::uuids::to_string(uuid);
@@ -182,25 +187,15 @@ int main(int argc, char* argv[])
 					buffers.push_back(boost::asio::buffer(&request.size, 4));
 					boost::asio::write(s, buffers);
 
-					s.read_some(boost::asio::buffer(&response, response_header_length + client_list_max_bytes));
-
-					if (response.code == 1001 && response.size > 0) {
-						num_of_clients = response.size / (uuid_length + user_max_length);
-
-						if (num_of_clients > max_clients) {
-							std::cout << "Displaying only first " << max_clients << "users" << std::endl;
-							memcpy_s(&clients, client_list_max_bytes, &response.payload, client_list_max_bytes);
-						}
-						else {
-							memcpy_s(&clients, response.size, &response.payload, response.size);
-						}
-
-						for (size_t i = 0; i < response.size / (uuid_length + user_max_length); i++)
+					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
+					if (response.code == client_list_success && response.size > 0) {
+						
+						num_of_clients = response.size / sizeof client;
+						for (size_t i = 0; i < num_of_clients; i++)
 						{
-							clients_response user = clients[i];
-							std::string currUid = boost::uuids::to_string(user.client_id);
-
-							std::cout << user.client_name << " - " << currUid << std::endl;
+							boost::asio::read(s, boost::asio::buffer(&client, sizeof client));
+							std::string currUid = boost::uuids::to_string(client.client_id);
+							std::cout << client.client_name << " - " << currUid << std::endl;
 						}
 					}
 
@@ -221,8 +216,30 @@ int main(int argc, char* argv[])
 						std::cout << "Action requires registration." << std::endl;
 						break;
 					}
-					request.code = 104;
+
+
+					std::copy(uuid.begin(), uuid.end(), request.clientId);
+					request.code = get_messages_code;
 					request.size = 0;
+					request.version_ = 1;
+
+					buffers.push_back(boost::asio::buffer(&request.clientId, uuid_length));
+					buffers.push_back(boost::asio::buffer(&request.version_, 1));
+					buffers.push_back(boost::asio::buffer(&request.code, 1));
+					buffers.push_back(boost::asio::buffer(&request.size, 4));
+					boost::asio::write(s, buffers);
+
+					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
+					if (response.code == waiting_messages_success && response.size > 0) {
+						while (s.available() > 0) {
+							boost::asio::read(s, boost::asio::buffer(&msg_meta, sizeof msg_meta));
+							msg_content = new char[msg_meta.size];
+							boost::asio::read(s, boost::asio::buffer(msg_content, msg_meta.size));
+							cout.write(msg_content, msg_meta.size);
+							cout << endl;
+							delete[] msg_content;
+						}
+					}
 
 					break;
 

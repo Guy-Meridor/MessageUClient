@@ -19,7 +19,6 @@ struct response{
     unsigned char version;
     unsigned short int code;
     unsigned int size;
-    std::string payload;
 };
 
 struct register_response {
@@ -27,9 +26,16 @@ struct register_response {
 };
 
 struct clients_response {
-    //char client_id[uuid_length];
     boost::uuids::uuid client_id;
+    //char client_id[uuid_length];
     char client_name[user_max_length];
+};
+
+struct message_meta {
+    unsigned int message_id;
+    unsigned char Type;
+    unsigned int size;
+    //char* content;
 };
 
 struct server_info {

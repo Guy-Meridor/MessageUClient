@@ -35,6 +35,6 @@ enum Request_Codes {
 
 enum Response_Codes {
     registration_success = 1000,
-    client_list_success = 1001,
+    client_list_success,
     waiting_messages_success = 1003,
 };

@@ -28,13 +28,14 @@ enum Action {
 enum Request_Codes {
     registration_code = 100,
     client_list_code = 101,
+    send_text_message_code = 103,
     get_messages_code = 104
-
 
 };
 
 enum Response_Codes {
     registration_success = 1000,
     client_list_success = 1001,
-    waiting_messages_success = 1003,
+    message_sent_success = 1003,
+    waiting_messages_success = 1004,
 };

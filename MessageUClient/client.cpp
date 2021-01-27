@@ -7,6 +7,7 @@
 #include <boost/asio.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/uuid/uuid.hpp>
+#include <boost/uuid/nil_generator.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/lexical_cast.hpp>
 
@@ -50,6 +51,48 @@ server_info get_server_info_from_file() {
 
 }
 
+void get_clients(tcp::socket* s, boost::uuids::uuid uuid, std::map<boost::uuids::uuid, std::string>& usernames) {
+	std::vector<boost::asio::const_buffer> buffers;
+	request request;
+	response response;
+	clients_response client;
+	usernames.clear();
+
+	std::copy(uuid.begin(), uuid.end(), request.clientId);
+	request.code = client_list_code;
+	request.size = 0;
+
+	buffers.push_back(boost::asio::buffer(&request.clientId, uuid_length));
+	buffers.push_back(boost::asio::buffer(&request.version_, 1));
+	buffers.push_back(boost::asio::buffer(&request.code, 1));
+	buffers.push_back(boost::asio::buffer(&request.size, 4));
+	boost::asio::write(*s, buffers);
+
+	boost::asio::read(*s, boost::asio::buffer(&response, response_header_length));
+	if (response.code == client_list_success && response.size > 0) {
+		size_t num_of_clients = response.size / sizeof clients_response;
+
+		for (size_t i = 0; i < num_of_clients; i++)
+		{
+			boost::asio::read(*s, boost::asio::buffer(&client, sizeof client));
+			std::string username(client.client_name);
+			usernames[client.client_id] = username;
+		}
+	}
+
+}
+
+boost::uuids::uuid get_user_uid(std::string username, std::map<boost::uuids::uuid, std::string>& usernames) {
+
+	for (const auto& [uid, uname] : usernames) {
+		if (username.compare(uname) == 0) {
+			return uid;
+		}
+	}
+
+	return boost::uuids::nil_uuid();
+}
+
 int main(int argc, char* argv[])
 {
 	try
@@ -72,19 +115,26 @@ int main(int argc, char* argv[])
 
 		// register
 		register_response reg_res;
-		char* message = new char[message_max_length];
 		boost::uuids::uuid uuid;
 		string user_action;
 		boost::filesystem::path user_file(USER_PATH);
 
 		// get clients
 		//clients_response clients[max_clients];
-		clients_response client;
+		std::map<boost::uuids::uuid, std::string> usernames;
 		size_t num_of_clients;
 
 		//get messages
 		message_meta msg_meta;
 		char* msg_content;
+
+		// send text message
+		boost::uuids::uuid rec_uid;
+		std::string str_rec_username;
+		char message[message_max_length];
+		send_message_payload_meta send_message_request_meta;
+		message_sent msg_sent_response;
+
 
 
 		// user file
@@ -108,6 +158,12 @@ int main(int argc, char* argv[])
 
 			try
 			{
+				cout << "------------------------------------" << std::endl;
+				if (!strUsername.empty())
+				{
+					std::cout << "Hello " << strUsername << std::endl;
+				}
+
 				std::cout << "MessageU client at your service." << std::endl <<
 					Register << ". Register" << std::endl <<
 					clients_list << ". Request for clients list" << std::endl <<
@@ -140,9 +196,9 @@ int main(int argc, char* argv[])
 
 					std::cout << "Enter username: ";
 					std::cin.getline(username, user_max_length);
+					
 
 					// Send to server
-					request.paylod = username;
 					request.code = registration_code;
 					request.size = strlen(username);
 					std::copy(uuid.begin(), uuid.end(), request.clientId);
@@ -158,10 +214,9 @@ int main(int argc, char* argv[])
 					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
 
 					if (response.code == registration_success) {
-
+						strUsername = std::string(username);
 						boost::asio::read(s, boost::asio::buffer(&reg_res, uuid_length));
 						uuid = reg_res.client_id;
-
 						strUuid = boost::uuids::to_string(uuid);
 						user_output_stream.open("me.info");
 						user_output_stream << username << std::endl << strUuid;
@@ -176,29 +231,11 @@ int main(int argc, char* argv[])
 						break;
 					}
 
-					
-					std::copy(uuid.begin(), uuid.end(), request.clientId);
-					request.code = client_list_code;
-					request.size = 0;
+					get_clients(&s, uuid, usernames);
 
-					buffers.push_back(boost::asio::buffer(&request.clientId, uuid_length));
-					buffers.push_back(boost::asio::buffer(&request.version_, 1));
-					buffers.push_back(boost::asio::buffer(&request.code, 1));
-					buffers.push_back(boost::asio::buffer(&request.size, 4));
-					boost::asio::write(s, buffers);
-
-					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
-					if (response.code == client_list_success && response.size > 0) {
-						
-						num_of_clients = response.size / sizeof client;
-						for (size_t i = 0; i < num_of_clients; i++)
-						{
-							boost::asio::read(s, boost::asio::buffer(&client, sizeof client));
-							std::string currUid = boost::uuids::to_string(client.client_id);
-							std::cout << client.client_name << " - " << currUid << std::endl;
-						}
+					for (const auto& [uid, uname] : usernames) {
+						std::cout << uid << " - " << uname << std::endl;
 					}
-
 
 					break;
 
@@ -217,7 +254,7 @@ int main(int argc, char* argv[])
 						break;
 					}
 
-
+					get_clients(&s, uuid, usernames);
 					std::copy(uuid.begin(), uuid.end(), request.clientId);
 					request.code = get_messages_code;
 					request.size = 0;
@@ -227,16 +264,24 @@ int main(int argc, char* argv[])
 					buffers.push_back(boost::asio::buffer(&request.version_, 1));
 					buffers.push_back(boost::asio::buffer(&request.code, 1));
 					buffers.push_back(boost::asio::buffer(&request.size, 4));
+					
 					boost::asio::write(s, buffers);
 
 					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
-					if (response.code == waiting_messages_success && response.size > 0) {
+					if (response.code == waiting_messages_success) {
+						if (response.size == 0) {
+							cout << "There are no waiting message for you :(" << std::endl;
+							break;
+						}
+
 						while (s.available() > 0) {
 							boost::asio::read(s, boost::asio::buffer(&msg_meta, sizeof msg_meta));
 							msg_content = new char[msg_meta.size];
 							boost::asio::read(s, boost::asio::buffer(msg_content, msg_meta.size));
+
+							cout << "From: " << usernames[msg_meta.from_id] << std::endl << "Content:" << endl;
 							cout.write(msg_content, msg_meta.size);
-							cout << endl;
+							cout << std::endl << "-------------------" << std::endl;
 							delete[] msg_content;
 						}
 					}
@@ -248,12 +293,55 @@ int main(int argc, char* argv[])
 						std::cout << "Action requires registration." << std::endl;
 						break;
 					}
-					std::cout << "To whom would you like to send a message? ";
+
+					get_clients(&s, uuid, usernames);
+
+					std::cout << "Enter the recipient user name: ";
 					std::cin.getline(username, user_max_length);
+					str_rec_username = std::string(username);
+					rec_uid = get_user_uid(str_rec_username, usernames);
+
+					while (rec_uid.is_nil()) {
+						std::cout << "The username you entered doesn't exists, enter again: ";
+						std::cin.getline(username, user_max_length);
+						std::string str_rec_username(username);
+						rec_uid = get_user_uid(str_rec_username, usernames);
+					}
+
+
 					std::cout << "Enter the message to be sent: " << std::endl;
 					std::cin.getline(message, message_max_length);
 
-					request.code = 104;
+
+					get_clients(&s, uuid, usernames);
+					std::copy(uuid.begin(), uuid.end(), request.clientId);
+					request.code = send_text_message_code;;
+					request.version_ = 1;
+
+					send_message_request_meta.to_id = rec_uid;
+					send_message_request_meta.Type = 1;
+					send_message_request_meta.size = strlen(message);
+					request.size = sizeof send_message_request_meta + send_message_request_meta.size;
+
+					buffers.push_back(boost::asio::buffer(&request.clientId, uuid_length));
+					buffers.push_back(boost::asio::buffer(&request.version_, 1));
+					buffers.push_back(boost::asio::buffer(&request.code, 1));
+					buffers.push_back(boost::asio::buffer(&request.size, 4));
+
+					buffers.push_back(boost::asio::buffer(&send_message_request_meta.to_id, uuid_length));
+					buffers.push_back(boost::asio::buffer(&send_message_request_meta.Type, 1));
+					buffers.push_back(boost::asio::buffer(&send_message_request_meta.size, 4));
+
+					buffers.push_back(boost::asio::buffer(&message, send_message_request_meta.size));
+
+					boost::asio::write(s, buffers);
+
+					boost::asio::read(s, boost::asio::buffer(&response, response_header_length));
+					if (response.code == message_sent_success && response.size > 0) {
+
+						boost::asio::read(s, boost::asio::buffer(&msg_sent_response, sizeof msg_sent_response));
+						cout << "Message sent successfully to " << usernames[msg_sent_response.to_id] << "it's id is " << msg_sent_response.message_id << std::endl;
+					}
 
 					break;
 

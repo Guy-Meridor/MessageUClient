@@ -12,7 +12,6 @@ struct request{
     unsigned char version_ = 1;
     unsigned char code;
     unsigned int size;
-    std::string paylod;
 };
 
 struct response{
@@ -32,10 +31,22 @@ struct clients_response {
 };
 
 struct message_meta {
+    boost::uuids::uuid from_id;
     unsigned int message_id;
     unsigned char Type;
     unsigned int size;
     //char* content;
+};
+
+struct message_sent {
+    boost::uuids::uuid to_id;
+    int message_id;
+};
+
+struct send_message_payload_meta {
+    boost::uuids::uuid to_id;
+    unsigned char Type;
+    unsigned int size;
 };
 
 struct server_info {
@@ -44,6 +55,5 @@ struct server_info {
 };
 
 struct user_info {
-
     boost::uuids::uuid client_id;
 };
